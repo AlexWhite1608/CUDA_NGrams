@@ -1,17 +1,17 @@
 import numpy as np
 import pycuda.driver as cuda
-import pycuda.autoinit
 import pycuda.gpuarray as gpuarray
+import pycuda.autoinit
 from typing import Dict, Tuple
 import os
-from utils.load_cuda_kernels import load_cuda_kernels
+from src.utils.load_cuda_kernels import load_cuda_kernels
 from itertools import groupby
 
 
 class WordNgramGPU:
     def __init__(self):
         # loads the kernel from the .cu file
-        kernel_path = os.path.join(os.path.dirname(__file__), 'kernels.cu')
+        kernel_path = os.path.join(os.path.dirname(__file__), 'kernel.cu')
         self.mod = load_cuda_kernels(kernel_path)
         self.map_kernel = self.mod.get_function("word_ngram_map_kernel")
         self.reduce_kernel = self.mod.get_function("word_ngram_reduce_kernel")

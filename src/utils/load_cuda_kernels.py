@@ -1,14 +1,14 @@
 import os
-import pycuda.driver as cuda
 from pycuda.compiler import SourceModule
 
-# Load CUDA kernel code from file
 def load_cuda_kernels(kernel_file: str = None):
+    print(f"Requested CUDA kernel file: {kernel_file}")
 
     if kernel_file and os.path.exists(kernel_file):
+        print(f"Loading CUDA kernel from file: {kernel_file}")
         with open(kernel_file, 'r') as f:
             kernel_code = f.read()
-    
-    # compiles and returns the CUDA module
-    mod = SourceModule(kernel_code)
-    return mod
+        mod = SourceModule(kernel_code)
+        return mod
+    else:
+        raise FileNotFoundError(f"CUDA kernel file not found: {kernel_file}")

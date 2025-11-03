@@ -1,17 +1,18 @@
 import numpy as np
 import pycuda.driver as cuda
 import pycuda.gpuarray as gpuarray
+import pycuda.autoinit
 from typing import Dict
 import os
-from utils.load_cuda_kernels import load_cuda_kernels
-from utils.text_processing import text_to_bytes
+from src.utils.load_cuda_kernels import load_cuda_kernels
+from src.utils.text_processing import text_to_bytes
 
 
 class CharNgramGPU:
     def __init__(self):
         
         # loads the kernel from the .cu file
-        kernel_path = os.path.join(os.path.dirname(__file__), 'kernels.cu')
+        kernel_path = os.path.join(os.path.dirname(__file__), 'kernel.cu')
         self.mod = load_cuda_kernels(kernel_path)
         self.kernel = self.mod.get_function("char_ngram_kernel")
     

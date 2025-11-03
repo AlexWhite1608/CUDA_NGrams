@@ -22,7 +22,7 @@ __global__ void char_ngram_kernel(
     // builds the index from right to left
     for (int i = n - 1; i >= 0; i--) {
         flat_idx += text[idx + i] * multiplier;
-        multiplier *= 256;
+        multiplier *= 256;      // computes unique index in base 256
     }
     
     if (flat_idx < hist_size) {

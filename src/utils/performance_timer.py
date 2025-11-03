@@ -1,5 +1,5 @@
 import time
-from typing import Dict, Any, Callable
+from typing import Dict
 from contextlib import contextmanager
 
 
