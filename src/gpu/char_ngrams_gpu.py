@@ -57,15 +57,22 @@ class CharNgramGPU:
         
         # build result dictionary
         result = {}
-        for flat_idx in range(hist_size):
-            if histogram_cpu[flat_idx] > 0:
-                # reconstruct n-gram from flat index
-                ngram_chars = []
-                temp_idx = flat_idx
-                for _ in range(n):
-                    ngram_chars.append(chr(temp_idx % 256))
-                    temp_idx //= 256
-                ngram = ''.join(reversed(ngram_chars))
-                result[ngram] = int(histogram_cpu[flat_idx])
         
-        return result
+        # === OTTIMIZZAZIONE ===
+        # Trova tutti gli indici dove il conteggio è > 0
+        non_zero_indices = np.nonzero(histogram_cpu)[0]
+
+        # Ora itera solo su quegli indici (molto più veloce!)
+        for flat_idx in non_zero_indices:
+            count = int(histogram_cpu[flat_idx])
+            
+            # Ricostruisci n-gram
+            ngram_chars = []
+            temp_idx = int(flat_idx) # Assicurati che sia un int Python
+            for _ in range(n):
+                ngram_chars.append(chr(temp_idx % 256))
+                temp_idx //= 256
+            ngram = ''.join(reversed(ngram_chars))
+            result[ngram] = count
+
+        return result   

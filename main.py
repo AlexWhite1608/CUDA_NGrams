@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 # === CONFIGURAZIONE MANUALE ===
 CORPUS_PATH = "data/data.txt"         # Modifica qui il percorso del file
-AMPLIFY_FACTOR = 2                     # Modifica qui il fattore di amplificazione
+AMPLIFY_FACTOR = 10                     # Modifica qui il fattore di amplificazione
 MODE = "all"                            # Scegli tra: all, char, word, char-bigram, char-trigram, word-bigram, word-trigram
 
 def main():
