@@ -1,6 +1,6 @@
 extern "C" {
 
-// character kernel
+// A-V1 kernel to compute character N-grams and update histogram with atomic operations
 __global__ void char_ngram_kernel(
     const unsigned char* text,
     unsigned int text_length,
@@ -30,32 +30,58 @@ __global__ void char_ngram_kernel(
     }
 }
 
-
-// words kernel
-__global__ void word_ngram_map_kernel(
-    const unsigned int* word_ids,
-    unsigned int num_tokens,
+// A-V2 kernel 1
+__global__ void char_ngram_kernel_private(
+    const unsigned char* text,
+    unsigned int text_length,
     unsigned int n,
-    unsigned int vocab_size,
-    unsigned long long* ngram_ids
+    unsigned int* private_histograms,  // Array: [num_private_hists * hist_size]
+    unsigned int hist_size,
+    unsigned int num_private_hists     
 ) {
     unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
     
     // check for bounds
-    if (idx >= num_tokens - n + 1) {
+    if (idx >= text_length - n + 1) {
         return;
     }
     
-    // computes ngram id
-    unsigned long long ngram_id = 0;
-    unsigned long long multiplier = 1;
+    // computes the n-gram index
+    unsigned int flat_idx = 0;
+    unsigned int multiplier = 1;
     
     for (int i = n - 1; i >= 0; i--) {
-        ngram_id += word_ids[idx + i] * multiplier;
-        multiplier *= vocab_size;
+        flat_idx += text[idx + i] * multiplier;
+        multiplier *= 256;
     }
     
-    ngram_ids[idx] = ngram_id;
+    if (flat_idx < hist_size) {
+        unsigned int hist_id = blockIdx.x % num_private_hists;
+        unsigned int private_offset = hist_id * hist_size;
+        atomicAdd(&private_histograms[private_offset + flat_idx], 1);
+    }
+}
+
+// A-V2 kernel 2
+__global__ void reduce_histograms(
+    const unsigned int* private_histograms,  // Input: [num_blocks * hist_size]
+    unsigned int* global_histogram,          // Output: [hist_size]
+    unsigned int num_blocks,
+    unsigned int hist_size
+) {
+    unsigned int bin_idx = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (bin_idx >= hist_size) {
+        return;
+    }
+    
+    unsigned int sum = 0;
+    
+    for (unsigned int block = 0; block < num_blocks; block++) {
+        sum += private_histograms[block * hist_size + bin_idx];
+    }
+    
+    global_histogram[bin_idx] = sum;
 }
 
 } // extern "C"

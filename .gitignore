@@ -1,3 +1,4 @@
 environment.yml
 /data/
 __pycache__/
+*.md
