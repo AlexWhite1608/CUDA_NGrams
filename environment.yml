@@ -9,3 +9,4 @@ dependencies:
   - pip
   - pip:
     - pycuda
+    - cupy-cuda12x  

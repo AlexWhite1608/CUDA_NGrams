@@ -40,16 +40,21 @@ def main():
         
         all_results = []
         
-        for alg in ["v1", "v2"]:
+        for alg in ["v1", "v2", "B"]:
             print(f"\n{'='*70}")
             print(f"  Testing Algorithm: {alg.upper()}")
             print(f"{'='*70}\n")
             
-            benchmark = NgramBenchmark(corpus, amplify, algorithm=alg)
-            results = benchmark.run_all_benchmarks()
-            all_results.extend(results)
+            try:
+                benchmark = NgramBenchmark(corpus, amplify, algorithm=alg)
+                results = benchmark.run_all_benchmarks()
+                all_results.extend(results)
+            except Exception as e:
+                print(f"Error running algorithm {alg}: {e}")
+                import traceback
+                traceback.print_exc()
         
-        # Print comparison summary
+        #FIXME: Print comparison summary
         print("\n" + "=" * 70)
         print("  COMPARISON SUMMARY")
         print("=" * 70)
