@@ -20,7 +20,7 @@ class PerformanceTimer:
     def get_elapsed(self) -> float:
         return self.elapsed_time if self.elapsed_time is not None else 0.0
 
-# Check if CPU and GPU results are identical
+# FIXME: Check if CPU and GPU results are identical
 def verify_results(cpu_result: Dict, gpu_result: Dict, tolerance: float = 1e-6) -> bool:
 
     if len(cpu_result) != len(gpu_result):

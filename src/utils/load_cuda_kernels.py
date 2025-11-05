@@ -2,8 +2,6 @@ import os
 from pycuda.compiler import SourceModule
 
 def load_cuda_kernels(kernel_file: str = None):
-    print(f"Requested CUDA kernel file: {kernel_file}")
-
     if kernel_file and os.path.exists(kernel_file):
         print(f"Loading CUDA kernel from file: {kernel_file}")
         with open(kernel_file, 'r') as f:

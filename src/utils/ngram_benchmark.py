@@ -7,9 +7,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../.
 from src.utils.text_processing import amplify_corpus, tokenize, create_vocabulary, tokens_to_ids
 from src.utils.performance_timer import PerformanceTimer, verify_results, print_benchmark_report
 from src.sequential.sequential import compute_char_ngrams_cpu
-from src.sequential.sequential import compute_word_ngrams_cpu
 from src.gpu.char_ngrams_gpu import CharNgramGPU
-from src.gpu.word_ngrams_gpu import WordNgramGPU
 
 # NgramBenchmark class to run all benchmarks
 class NgramBenchmark:
@@ -27,7 +25,6 @@ class NgramBenchmark:
         
         # initialize GPU n-gramm objects
         self.char_gpu = CharNgramGPU()
-        self.word_gpu = WordNgramGPU()
     
     def setup(self):
         print("\n" + "=" * 70)
@@ -77,37 +74,6 @@ class NgramBenchmark:
             top_ngrams_gpu=result_gpu,
             n_top=5
         )
-    # Runs benchmark for word n-grams
-    def benchmark_word_ngrams(self, n: int):
-        title = f"{'Bigrams' if n == 2 else 'Trigrams'} of Words"
-        corpus_size_mb = len(self.corpus_text.encode('utf-8')) / (1024 * 1024)
-        
-        # CPU
-        with PerformanceTimer("CPU Word N-grams") as timer_cpu:
-            result_cpu = compute_word_ngrams_cpu(self.tokens, n)
-        cpu_time = timer_cpu.get_elapsed()
-        
-        # GPU
-        with PerformanceTimer("GPU Word N-grams") as timer_gpu:
-            result_gpu = self.word_gpu.compute_word_ngrams_gpu(
-                self.word_ids, n, self.vocab_size, self.id_to_word
-            )
-        gpu_time = timer_gpu.get_elapsed()
-        
-        # verification
-        verification_passed = verify_results(result_cpu, result_gpu)
-        
-        # Report
-        print_benchmark_report(
-            title=f"Benchmark: {title}",
-            corpus_size_mb=corpus_size_mb,
-            cpu_time=cpu_time,
-            gpu_time=gpu_time,
-            verification_passed=verification_passed,
-            top_ngrams_cpu=result_cpu,
-            top_ngrams_gpu=result_gpu,
-            n_top=5
-        )
     
     # Runs all benchmarks
     def run_all_benchmarks(self):
@@ -122,12 +88,6 @@ class NgramBenchmark:
         
         # trigrams of characters
         self.benchmark_char_ngrams(n=3)
-        
-        # bigrams of words
-        self.benchmark_word_ngrams(n=2)
-        
-        # trigrams of words
-        self.benchmark_word_ngrams(n=3)
         
         print("\n" + "=" * 70)
         print("  ALL BENCHMARKS COMPLETED")

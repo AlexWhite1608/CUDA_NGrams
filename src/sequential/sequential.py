@@ -15,16 +15,3 @@ def compute_char_ngrams_cpu(text: str, n: int) -> Dict[str, int]:
         ngrams.append(ngram)
     
     return dict(Counter(ngrams))
-
-# Compute word N-grams using a sequential approach. Returns a dictionary with N-gram counts.
-def compute_word_ngrams_cpu(tokens: List[str], n: int) -> Dict[Tuple[str, ...], int]:
-
-    if len(tokens) < n:
-        return {}
-    
-    ngrams = []
-    for i in range(len(tokens) - n + 1):
-        ngram = tuple(tokens[i:i+n])
-        ngrams.append(ngram)
-    
-    return dict(Counter(ngrams))

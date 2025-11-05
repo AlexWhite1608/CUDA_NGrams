@@ -58,36 +58,4 @@ __global__ void word_ngram_map_kernel(
     ngram_ids[idx] = ngram_id;
 }
 
-
-// counts words ngram after sorting
-__global__ void word_ngram_reduce_kernel(
-    const unsigned long long* sorted_ngram_ids,
-    unsigned int num_ngrams,
-    unsigned long long* unique_ngrams,
-    unsigned int* counts,
-    unsigned int* num_unique
-) {
-    unsigned int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    
-    if (idx >= num_ngrams) {
-        return;
-    }
-    
-    bool is_new_group = (idx == 0) || (sorted_ngram_ids[idx] != sorted_ngram_ids[idx - 1]);
-    
-    if (is_new_group) {
-        // finds the end of the group
-        unsigned int count = 1;
-        unsigned int j = idx + 1;
-        while (j < num_ngrams && sorted_ngram_ids[j] == sorted_ngram_ids[idx]) {
-            count++;
-            j++;
-        }
-        
-        unsigned int out_idx = atomicAdd(num_unique, 1);
-        unique_ngrams[out_idx] = sorted_ngram_ids[idx];
-        counts[out_idx] = count;
-    }
-}
-
 } // extern "C"
