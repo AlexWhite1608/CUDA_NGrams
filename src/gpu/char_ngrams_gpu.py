@@ -21,7 +21,11 @@ class CharNgramGPU:
             self.kernel_private = self.mod.get_function("char_ngram_kernel_private")
             self.kernel_reduce = self.mod.get_function("reduce_histograms")
         elif algorithm == "B":
-            self.kernel_map = self.mod.get_function("char_ngram_map_kernel")
+            with open(kernel_path, 'r') as f:
+                kernel_code = f.read()
+            
+            # load kernel code for CuPy
+            self.kernel_map_cupy = cp.RawKernel(kernel_code, "char_ngram_map_kernel")
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
     
@@ -132,93 +136,64 @@ class CharNgramGPU:
         
         num_ngrams = text_length - n + 1
         
-        text_gpu = gpuarray.to_gpu(text_bytes)
+        text_gpu = cp.asarray(text_bytes, dtype=cp.uint8)
         
-        # ===== PHASE 1: MAP =====
         print(f"[Algo-B] Phase 1: MAP - Generating {num_ngrams} n-gram IDs")
-        ngram_ids_gpu = gpuarray.empty(num_ngrams, dtype=np.uint64)
+        ngram_ids_gpu = cp.empty(num_ngrams, dtype=cp.uint64)
         
         threads_per_block = 256
         num_blocks = (num_ngrams + threads_per_block - 1) // threads_per_block
         
-        self.kernel_map(
-            text_gpu.gpudata,
-            np.uint32(text_length),
-            np.uint32(n),
-            ngram_ids_gpu.gpudata,
-            block=(threads_per_block, 1, 1),
-            grid=(num_blocks, 1)
+        self.kernel_map_cupy(
+            (num_blocks,),
+            (threads_per_block,),
+            (
+                text_gpu,
+                np.uint32(text_length),
+                np.uint32(n),
+                ngram_ids_gpu
+            )
         )
-        cuda.Context.synchronize()
+        cp.cuda.Stream.null.synchronize()
         
-        # ===== PHASE 2: SORT =====
         print(f"[Algo-B] Phase 2: SORT - Sorting {num_ngrams} IDs")
-        sorted_ngram_ids_gpu = self._sort_ngram_ids_cupy(ngram_ids_gpu, num_ngrams)
-        cuda.Context.synchronize()
-        
-        # ===== PHASE 3: REDUCE =====
+        sorted_ngram_ids_gpu = cp.sort(ngram_ids_gpu)
+        del ngram_ids_gpu # Libera memoria
+        cp.cuda.Stream.null.synchronize()
+
         print(f"[Algo-B] Phase 3: REDUCE - Counting unique n-grams (CuPy)")
-        result = self._reduce_with_cupy(sorted_ngram_ids_gpu, num_ngrams, n)
+        
+        unique_ngrams_cp, counts_cp = cp.unique(sorted_ngram_ids_gpu, return_counts=True)
+        
+        del sorted_ngram_ids_gpu 
+        
+        num_unique = unique_ngrams_cp.size
+        print(f"[Algo-B] Found {num_unique} unique n-grams")
+        
+        if num_unique == 0:
+            return {}
+        
+        unique_ngrams_cpu = cp.asnumpy(unique_ngrams_cp)
+        counts_cpu = cp.asnumpy(counts_cp)
+        
+        del unique_ngrams_cp
+        del counts_cp
+        cp.get_default_memory_pool().free_all_blocks()
+        
+        result = {}
+        for i in range(num_unique):
+            flat_idx = int(unique_ngrams_cpu[i])
+            count = int(counts_cpu[i])
+            
+            ngram_chars = []
+            temp_idx = flat_idx
+            for _ in range(n):
+                ngram_chars.append(chr(temp_idx % 256))
+                temp_idx //= 256
+            ngram = ''.join(reversed(ngram_chars))
+            result[ngram] = count
         
         return result
-    
-    def _sort_ngram_ids_cupy(self, ngram_ids_gpu: gpuarray.GPUArray, num_ngrams: int) -> gpuarray.GPUArray:
-        """Sort n-gram IDs using CuPy - copia i dati per evitare conflitti di contesto."""
-        try:
-            print(f"[Algo-B] Sorting with CuPy ({num_ngrams} elements)...")
-            
-            # Sincronizza PyCUDA
-            cuda.Context.synchronize()
-            
-            # STRATEGIA: Copia D->D da PyCUDA a CuPy
-            # 1. Alloca array CuPy nativo
-            ngram_ids_cupy = cp.empty(num_ngrams, dtype=cp.uint64)
-            
-            # 2. Copia device-to-device (veloce, ~2ms per 12M elementi)
-            cuda.memcpy_dtod(
-                ngram_ids_cupy.data.ptr,
-                ngram_ids_gpu.gpudata,
-                ngram_ids_gpu.nbytes
-            )
-            
-            # 3. Ordina con CuPy (array nativo CuPy, nessun problema di contesto)
-            sorted_cupy = cp.sort(ngram_ids_cupy)
-            
-            # 4. Alloca array PyCUDA per il risultato
-            sorted_gpu = gpuarray.empty(num_ngrams, dtype=np.uint64)
-            
-            # 5. Copia device-to-device da CuPy a PyCUDA
-            cuda.memcpy_dtod(
-                sorted_gpu.gpudata,
-                sorted_cupy.data.ptr,
-                sorted_cupy.nbytes
-            )
-            
-            # 6. Pulisci memoria CuPy
-            del ngram_ids_cupy
-            del sorted_cupy
-            cp.get_default_memory_pool().free_all_blocks()
-            
-            print("[Algo-B] ✓ CuPy sort successful")
-            cuda.Context.synchronize()
-            
-            return sorted_gpu
-            
-        except Exception as e:
-            print(f"[Algo-B] CuPy sort failed: {type(e).__name__}: {e}")
-            print(f"[Algo-B] Falling back to CPU NumPy sort...")
-            
-            # Fallback su CPU
-            import time
-            ngram_ids_cpu = ngram_ids_gpu.get()
-            t0 = time.perf_counter()
-            sorted_cpu = np.sort(ngram_ids_cpu)
-            sort_time = time.perf_counter() - t0
-            print(f"[Algo-B] CPU sort completed in {sort_time:.3f}s")
-            
-            return gpuarray.to_gpu(sorted_cpu)
-    
-    def _reduce_with_cupy(self, sorted_ngram_ids_gpu: gpuarray.GPUArray, num_ngrams: int, n: int) -> Dict[str, int]:
         """Esegui la riduzione (unique + counts) usando CuPy."""
         try:
             # Sincronizza PyCUDA

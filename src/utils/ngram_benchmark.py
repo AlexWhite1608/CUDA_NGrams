@@ -42,8 +42,23 @@ class NgramBenchmark:
         # converts tokens to IDs
         self.word_ids = tokens_to_ids(self.tokens, self.word_to_id)
         
+        print(f"Corpus Size: {len(self.corpus_text.encode('utf-8')) / (1024 * 1024):.2f} MB")
         print("Setup completed\n")
     
+    # warm-up to force JIT compilation before timing
+    def _warmup(self):
+        print("-" * 70)
+        print("  WARM-UP: Forcing JIT compilation...")
+        
+        # Usiamo una stringa molto piccola e n=2 (sufficiente per triggerare)
+        try:
+            _ = self.char_gpu.compute_char_ngrams_gpu("warmup", 2)
+            print("  Warm-up completed.")
+        except Exception as e:
+            print(f"  Warm-up failed: {e}")
+        
+        print("-" * 70)
+
     # Runs benchmark for character n-grams
     def benchmark_char_ngrams(self, n: int):
         title = f"{'Bigrams' if n == 2 else 'Trigrams'} of Characters [{self.algorithm.upper()}]"
@@ -55,13 +70,22 @@ class NgramBenchmark:
         cpu_time = timer_cpu.get_elapsed()
         
         # GPU
-        with PerformanceTimer(f"GPU Char N-grams ({self.algorithm})") as timer_gpu:
-            result_gpu = self.char_gpu.compute_char_ngrams_gpu(self.corpus_text, n)
-        gpu_time = timer_gpu.get_elapsed()
-        
-        # Verification
-        verification_passed = verify_results(result_cpu, result_gpu)
-        
+        try:
+            with PerformanceTimer(f"GPU Char N-grams ({self.algorithm})") as timer_gpu:
+                result_gpu = self.char_gpu.compute_char_ngrams_gpu(self.corpus_text, n)
+            gpu_time = timer_gpu.get_elapsed()
+            
+            # Verification
+            verification_passed = verify_results(result_cpu, result_gpu)
+            speedup = cpu_time / gpu_time if gpu_time > 0 else float('inf')
+
+        except Exception as e:
+            print(f"\n[ERROR] GPU execution failed for n={n}: {e}")
+            gpu_time = float('inf')
+            verification_passed = False
+            result_gpu = {}
+            speedup = 0.0
+
         print_benchmark_report(
             title=f"Benchmark: {title}",
             corpus_size_mb=corpus_size_mb,
@@ -80,12 +104,14 @@ class NgramBenchmark:
             "cpu_time": cpu_time,
             "gpu_time": gpu_time,
             "verification_passed": verification_passed,
-            "speedup": cpu_time / gpu_time if gpu_time > 0 else float('inf')
+            "speedup": speedup
         }
     
     # Runs all benchmarks
     def run_all_benchmarks(self):
         self.setup()
+        
+        self._warmup()
         
         print("\n" + "=" * 70)
         print("  STARTING ALL BENCHMARKS")
