@@ -2,10 +2,12 @@ import sys
 import os
 from src.utils.ngram_benchmark import NgramBenchmark
 from src.utils.logger import setup_logger
+from src.utils.csv_exporter import BenchmarkCSVExporter
 
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__)))
 
 logger = setup_logger("main", level="INFO")
+csv_exporter = BenchmarkCSVExporter(output_dir="results")
 
 CORPUS_PATH = "data/data.txt"
 HISTS_V2_SWEETSPOT = 128 
@@ -13,11 +15,12 @@ NUM_RUNS = 3
 
 # Experiment A: Scalability vs n-gram size
 EXP_A_AMPLIFY = 10
-EXP_A_N_VALUES = [2]  # 2, 3, 4
+EXP_A_N_VALUES = [2]    # 2, 3, 4, 5
 
 # Experiment B: Scalability vs corpus size
-EXP_B_AMPLIFY_FACTORS = [5, 10, 20, 50] # 5, 10, 20, 50
-EXP_B_N_VALUE = [2] 
+EXP_B_AMPLIFY_FACTORS = [5, 10, 20, 50]
+EXP_B_N_VALUE = [2] # 2, 3
+
 
 
 def print_summary_table(title: str, results: list):
@@ -69,6 +72,7 @@ def run_experiment_A_scalability_n(corpus_path: str):
     logger.info("=" * 90)
     
     results_A = []
+    all_detailed_runs = []
     
     for alg in ["v1", "v2", "B"]:
         hists = HISTS_V2_SWEETSPOT if alg == "v2" else 0
@@ -86,12 +90,31 @@ def run_experiment_A_scalability_n(corpus_path: str):
                 alg, 
                 max_private_hists=hists
             )
-            results = benchmark.run_all_benchmarks(n_values=EXP_A_N_VALUES, num_runs=NUM_RUNS)
+            results = benchmark.run_all_benchmarks(
+                n_values=EXP_A_N_VALUES, 
+                num_runs=NUM_RUNS,
+                experiment_name="experiment_A"
+            )
             results_A.extend(results)
+            all_detailed_runs.extend(benchmark.get_detailed_runs())
         except Exception as e:
             logger.error(f"Experiment A failed for algorithm {alg.upper()}: {e}")
 
     print_summary_table("Experiment A", results_A)
+    
+    # Export to CSV
+    if results_A:
+        config = {
+            'corpus_amplification': EXP_A_AMPLIFY,
+            'n_values': str(EXP_A_N_VALUES),
+            'num_runs': NUM_RUNS,
+            'v2_private_hists': HISTS_V2_SWEETSPOT
+        }
+        summary_file = csv_exporter.export_results("experiment_A", results_A, config)
+        detailed_file = csv_exporter.export_all_runs("experiment_A", all_detailed_runs)
+        logger.info(f"Results exported to: {summary_file}")
+        logger.info(f"Detailed runs exported to: {detailed_file}")
+    
     return results_A
 
 
@@ -103,6 +126,7 @@ def run_experiment_B_scalability_N(corpus_path: str):
     logger.info("=" * 90)
     
     results_B = []
+    all_detailed_runs = []
     
     for alg in ["v1", "v2", "B"]:
         for amplify_factor in EXP_B_AMPLIFY_FACTORS:
@@ -121,12 +145,30 @@ def run_experiment_B_scalability_N(corpus_path: str):
                     alg, 
                     max_private_hists=hists
                 )
-                results = benchmark.run_all_benchmarks(n_values=EXP_B_N_VALUE, num_runs=NUM_RUNS)
+                results = benchmark.run_all_benchmarks(
+                    n_values=EXP_B_N_VALUE, 
+                    num_runs=NUM_RUNS,
+                    experiment_name="experiment_B"
+                )
                 results_B.extend(results)
+                all_detailed_runs.extend(benchmark.get_detailed_runs())
             except Exception as e:
                 logger.error(f"Experiment B failed for {alg.upper()} at {amplify_factor}x: {e}")
 
     print_summary_table("Experiment B", results_B)
+    
+    if results_B:
+        config = {
+            'n_value': str(EXP_B_N_VALUE),
+            'amplify_factors': str(EXP_B_AMPLIFY_FACTORS),
+            'num_runs': NUM_RUNS,
+            'v2_private_hists': HISTS_V2_SWEETSPOT
+        }
+        summary_file = csv_exporter.export_results("experiment_B", results_B, config)
+        detailed_file = csv_exporter.export_all_runs("experiment_B", all_detailed_runs)
+        logger.info(f"Results exported to: {summary_file}")
+        logger.info(f"Detailed runs exported to: {detailed_file}")
+    
     return results_B
 
 

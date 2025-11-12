@@ -28,6 +28,8 @@ class NgramBenchmark:
         self.vocab_size = 0
         
         self.char_gpu = CharNgramGPU(algorithm=algorithm, max_private_hists=self.max_private_hists)
+        
+        self.detailed_runs = []
     
     def setup(self):
         self.corpus_text = amplify_corpus(self.corpus_path, self.amplification_factor)
@@ -66,21 +68,16 @@ class NgramBenchmark:
             logger.error(f"GPU execution failed: {e}")
             gpu_time = float('inf')
             verification_passed = False
-            result_gpu = {}
             speedup = 0.0
 
         return {
             'cpu_time': cpu_time,
             'gpu_time': gpu_time,
             'speedup': speedup,
-            'verification_passed': verification_passed,
-            'result_cpu': result_cpu,
-            'result_gpu': result_gpu
+            'verification_passed': verification_passed
         }
 
-    def benchmark_char_ngrams(self, n: int, num_runs: int = 1):
-        """Run multiple benchmark iterations and compute statistics."""
-        
+    def benchmark_char_ngrams(self, n: int, num_runs: int = 1, experiment_name: str = ""):
         cpu_times = []
         gpu_times = []
         speedups = []
@@ -97,6 +94,18 @@ class NgramBenchmark:
             gpu_times.append(single_result['gpu_time'])
             speedups.append(single_result['speedup'])
             all_verified = all_verified and single_result['verification_passed']
+            
+            self.detailed_runs.append({
+                'experiment': experiment_name,
+                'algorithm': self.algorithm,
+                'n': n,
+                'amplification_factor': self.amplification_factor,
+                'run_number': run_idx + 1,
+                'cpu_time': single_result['cpu_time'],
+                'gpu_time': single_result['gpu_time'],
+                'speedup': single_result['speedup'],
+                'verification_passed': single_result['verification_passed']
+            })
         
         # Compute statistics
         cpu_mean = np.mean(cpu_times)
@@ -127,12 +136,17 @@ class NgramBenchmark:
             "verification_passed": all_verified
         }
     
-    def run_all_benchmarks(self, n_values: list = [2, 3], num_runs: int = 1):
+    def run_all_benchmarks(self, n_values: list = [2, 3], num_runs: int = 1, experiment_name: str = ""):
         self.setup()
         self._warmup()
         
+        self.detailed_runs = []
+        
         results = []
         for n in n_values:
-            results.append(self.benchmark_char_ngrams(n=n, num_runs=num_runs))
+            results.append(self.benchmark_char_ngrams(n=n, num_runs=num_runs, experiment_name=experiment_name))
         
         return results
+    
+    def get_detailed_runs(self):
+        return self.detailed_runs
