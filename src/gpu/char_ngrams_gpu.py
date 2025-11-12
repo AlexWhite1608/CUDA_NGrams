@@ -3,6 +3,10 @@ import cupy as cp
 from typing import Dict
 import os
 from src.utils.text_processing import text_to_bytes
+from src.utils.logger import setup_logger
+
+logger = setup_logger("gpu")
+
 
 class CharNgramGPU:
     
@@ -43,7 +47,8 @@ class CharNgramGPU:
             text_gpu = cp.asarray(text_bytes, dtype=cp.uint8)
             histogram_gpu = cp.zeros(hist_size, dtype=cp.uint32)
         except Exception as e:
-            print(f"[Algo-V1] Fallimento allocazione per n={n}. Dimensione: {256**n * 4 / (1024**3):.2f} GB")
+            mem_gb = 256**n * 4 / (1024**3)
+            logger.warning(f"V1 GPU allocation failed (n={n}, required={mem_gb:.1f}GB)")
             raise e
             
         threads_per_block = 256
@@ -51,15 +56,8 @@ class CharNgramGPU:
         blocks = (num_ngrams + threads_per_block - 1) // threads_per_block
         
         self.kernel_v1_cupy(
-            (blocks,), 
-            (threads_per_block,),
-            (
-                text_gpu,                   
-                np.uint32(text_length),
-                np.uint32(n),
-                histogram_gpu,              
-                np.uint32(hist_size)
-            )
+            (blocks,), (threads_per_block,),
+            (text_gpu, np.uint32(text_length), np.uint32(n), histogram_gpu, np.uint32(hist_size))
         )
         
         cp.cuda.Stream.null.synchronize()
@@ -75,63 +73,40 @@ class CharNgramGPU:
             return {}
         
         hist_size = 256 ** n
-        
         text_gpu = cp.asarray(text_bytes, dtype=cp.uint8)
         
         threads_per_block = 256
         num_ngrams = text_length - n + 1
         num_blocks = (num_ngrams + threads_per_block - 1) // threads_per_block
         
-        MAX_PRIVATE_HISTS = self.max_private_hists 
-        num_private_hists = min(num_blocks, MAX_PRIVATE_HISTS)
-        blocks_per_hist = (num_blocks + num_private_hists - 1) // num_private_hists
-        
-        print(f"[A-v2 Memory] num_blocks={num_blocks}, private_hists={num_private_hists}, blocks_per_hist={blocks_per_hist}")
-        
+        num_private_hists = min(num_blocks, self.max_private_hists)
         total_mem_mb = num_private_hists * hist_size * 4 / (1024**2)
-        print(f"[A-v2 Memory] Allocating {total_mem_mb:.2f} MB")
         
-        if total_mem_mb > 20000: # limit for security
-             raise MemoryError(f"Aborting V2: Allocation too large ({total_mem_mb:.2f} MB)")
+        if total_mem_mb > 20000:
+             raise MemoryError(f"V2 allocation exceeds limit ({total_mem_mb:.0f}MB > 20GB)")
 
         try:
-            private_histograms_gpu = cp.zeros(
-                num_private_hists * hist_size, 
-                dtype=np.uint32
-            )
+            private_histograms_gpu = cp.zeros(num_private_hists * hist_size, dtype=np.uint32)
         except Exception as e:
-            print(f"[Algo-V2] Fallimento allocazione per n={n}. Dimensione: {total_mem_mb:.2f} MB")
+            logger.warning(f"V2 GPU allocation failed (n={n}, required={total_mem_mb:.0f}MB)")
             raise e
         
         self.kernel_v2_private_cupy(
-            (num_blocks,), 
-            (threads_per_block,),
-            (
-                text_gpu,
-                np.uint32(text_length),
-                np.uint32(n),
-                private_histograms_gpu,
-                np.uint32(hist_size),
-                np.uint32(num_private_hists)
-            )
+            (num_blocks,), (threads_per_block,),
+            (text_gpu, np.uint32(text_length), np.uint32(n), 
+             private_histograms_gpu, np.uint32(hist_size), np.uint32(num_private_hists))
         )
         
         cp.cuda.Stream.null.synchronize()
         
         global_histogram_gpu = cp.zeros(hist_size, dtype=np.uint32)
-        
         reduce_threads = 256
         reduce_blocks = (hist_size + reduce_threads - 1) // reduce_threads
         
         self.kernel_v2_reduce_cupy(
-            (reduce_blocks,), 
-            (reduce_threads,),
-            (
-                private_histograms_gpu,
-                global_histogram_gpu,
-                np.uint32(num_private_hists),  
-                np.uint32(hist_size)
-            )
+            (reduce_blocks,), (reduce_threads,),
+            (private_histograms_gpu, global_histogram_gpu, 
+             np.uint32(num_private_hists), np.uint32(hist_size))
         )
         
         cp.cuda.Stream.null.synchronize()
@@ -147,40 +122,26 @@ class CharNgramGPU:
             return {}
         
         num_ngrams = text_length - n + 1
-        
         text_gpu = cp.asarray(text_bytes, dtype=cp.uint8)
         
-        print(f"[Algo-B] Phase 1: MAP - Generating {num_ngrams} n-gram IDs (n={n})")
         ngram_ids_gpu = cp.empty(num_ngrams, dtype=cp.uint64)
-        
         threads_per_block = 256
         num_blocks = (num_ngrams + threads_per_block - 1) // threads_per_block
         
         self.kernel_map_cupy(
-            (num_blocks,),
-            (threads_per_block,),
-            (
-                text_gpu,
-                np.uint32(text_length),
-                np.uint32(n),
-                ngram_ids_gpu
-            )
+            (num_blocks,), (threads_per_block,),
+            (text_gpu, np.uint32(text_length), np.uint32(n), ngram_ids_gpu)
         )
         cp.cuda.Stream.null.synchronize()
         
-        print(f"[Algo-B] Phase 2: SORT - Sorting {num_ngrams} IDs")
         sorted_ngram_ids_gpu = cp.sort(ngram_ids_gpu)
         del ngram_ids_gpu 
         cp.cuda.Stream.null.synchronize()
 
-        print(f"[Algo-B] Phase 3: REDUCE - Counting unique n-grams (CuPy)")
-        
         unique_ngrams_cp, counts_cp = cp.unique(sorted_ngram_ids_gpu, return_counts=True)
-        
         del sorted_ngram_ids_gpu 
         
         num_unique = unique_ngrams_cp.size
-        print(f"[Algo-B] Found {num_unique} unique n-grams")
         
         if num_unique == 0:
             return {}
@@ -188,8 +149,7 @@ class CharNgramGPU:
         unique_ngrams_cpu = cp.asnumpy(unique_ngrams_cp)
         counts_cpu = cp.asnumpy(counts_cp)
         
-        del unique_ngrams_cp
-        del counts_cp
+        del unique_ngrams_cp, counts_cp
         cp.get_default_memory_pool().free_all_blocks()
         
         result = {}
