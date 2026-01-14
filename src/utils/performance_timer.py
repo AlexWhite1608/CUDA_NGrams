@@ -2,7 +2,6 @@ import time
 from typing import Dict
 from contextlib import contextmanager
 
-
 class PerformanceTimer:
     
     def __init__(self, name: str = "Operation"):
@@ -20,7 +19,6 @@ class PerformanceTimer:
     def get_elapsed(self) -> float:
         return self.elapsed_time if self.elapsed_time is not None else 0.0
 
-# FIXME: Check if CPU and GPU results are identical
 def verify_results(cpu_result: Dict, gpu_result: Dict, tolerance: float = 1e-6) -> bool:
 
     if len(cpu_result) != len(gpu_result):
@@ -48,7 +46,6 @@ def calculate_speedup(cpu_time: float, gpu_time: float) -> float:
         return float('inf')
     return cpu_time / gpu_time
 
-# Print a detailed benchmark report
 def print_benchmark_report(
     title: str,
     corpus_size_mb: float,

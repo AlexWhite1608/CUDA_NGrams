@@ -15,13 +15,11 @@ NUM_RUNS = 3
 
 # Experiment A: Scalability vs n-gram size
 EXP_A_AMPLIFY = 10
-EXP_A_N_VALUES = [2]    # 2, 3, 4, 5
+EXP_A_N_VALUES = [1, 2, 3, 4]    
 
 # Experiment B: Scalability vs corpus size
-EXP_B_AMPLIFY_FACTORS = [5, 10, 20, 50]
-EXP_B_N_VALUE = [2] # 2, 3
-
-
+EXP_B_AMPLIFY_FACTORS = [1, 5, 10, 20, 50]
+EXP_B_N_VALUE = [2, 3] 
 
 def print_summary_table(title: str, results: list):
     if not results:

@@ -1,5 +1,6 @@
 environment.yml
 /data/
 /results/
+/plots/
 __pycache__/
 *.md
